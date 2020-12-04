@@ -42,7 +42,15 @@ public class InventoryAccess implements IInventoryAccess {
         } catch (NoSuchMethodException ignored) {}
     }
 
+    /**
+     * @deprecated use {@link #isUsable()}
+     */
+    @Deprecated
     public static boolean isUseable() {
+        return isUsable();
+    }
+
+    public static boolean isUsable() {
         return craftInventory != null && getInventory != null;
     }
 
@@ -73,7 +81,7 @@ public class InventoryAccess implements IInventoryAccess {
             } catch (ReflectiveOperationException ignored) {}
         }
 
-        inv = grabFieldOfTypeFromObject(ISpecialPlayerInventory.class, inventory);
+        inv = grabFieldOfTypeFromObject(expected, inventory);
 
         if (expected.isInstance(inv)) {
             return expected.cast(inv);
