@@ -32,16 +32,14 @@ public interface IPlayerDataManager {
      * @param offline the OfflinePlayer
      * @return the Player loaded
      */
-    @Nullable
-    Player loadPlayer(@NotNull OfflinePlayer offline);
+    @Nullable Player loadPlayer(@NotNull OfflinePlayer offline);
 
     /**
      * Creates a new Player from an existing one that will function slightly better offline.
      *
      * @return the Player
      */
-    @NotNull
-    Player inject(@NotNull Player player);
+    @NotNull Player inject(@NotNull Player player);
 
     /**
      * Opens an ISpecialInventory for a Player.
@@ -51,14 +49,18 @@ public interface IPlayerDataManager {
      *`
      * @return the InventoryView opened
      */
-    @Nullable
-    InventoryView openInventory(@NotNull Player player, @NotNull ISpecialInventory inventory);
+    @Nullable InventoryView openInventory(@NotNull Player player, @NotNull ISpecialInventory inventory);
 
-    void sendSystemMessage(@NotNull Player player, @NotNull String message);
-
-    @NotNull
-    default String getLocale(Player player) {
-        return player.getLocale();
-    }
+    /**
+     * Convert a raw slot number into a player inventory slot number.
+     *
+     * <p>Note that this method is specifically for converting an ISpecialPlayerInventory slot number into a regular
+     * player inventory slot number.
+     *
+     * @param view the open inventory view
+     * @param rawSlot the raw slot in the view
+     * @return the converted slot number
+     */
+    int convertToPlayerSlot(InventoryView view, int rawSlot);
 
 }

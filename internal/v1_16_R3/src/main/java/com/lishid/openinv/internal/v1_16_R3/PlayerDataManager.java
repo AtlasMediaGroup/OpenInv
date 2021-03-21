@@ -16,32 +16,21 @@
 
 package com.lishid.openinv.internal.v1_16_R3;
 
-import com.lishid.openinv.OpenInv;
 import com.lishid.openinv.internal.IPlayerDataManager;
 import com.lishid.openinv.internal.ISpecialInventory;
+import com.lishid.openinv.internal.OpenInventoryView;
 import com.mojang.authlib.GameProfile;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.lang.reflect.Field;
 import net.minecraft.server.v1_16_R3.ChatComponentText;
-import net.minecraft.server.v1_16_R3.ChatMessageType;
 import net.minecraft.server.v1_16_R3.Container;
 import net.minecraft.server.v1_16_R3.Containers;
 import net.minecraft.server.v1_16_R3.Entity;
-import net.minecraft.server.v1_16_R3.EntityHuman;
 import net.minecraft.server.v1_16_R3.EntityPlayer;
 import net.minecraft.server.v1_16_R3.MinecraftServer;
-import net.minecraft.server.v1_16_R3.NBTCompressedStreamTools;
-import net.minecraft.server.v1_16_R3.NBTTagCompound;
-import net.minecraft.server.v1_16_R3.PacketPlayOutChat;
 import net.minecraft.server.v1_16_R3.PacketPlayOutOpenWindow;
 import net.minecraft.server.v1_16_R3.PlayerInteractManager;
-import net.minecraft.server.v1_16_R3.PlayerInventory;
-import net.minecraft.server.v1_16_R3.SystemUtils;
 import net.minecraft.server.v1_16_R3.World;
-import net.minecraft.server.v1_16_R3.WorldNBTStorage;
 import net.minecraft.server.v1_16_R3.WorldServer;
-import org.apache.logging.log4j.LogManager;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Server;
@@ -49,10 +38,7 @@ import org.bukkit.craftbukkit.v1_16_R3.CraftServer;
 import org.bukkit.craftbukkit.v1_16_R3.entity.CraftPlayer;
 import org.bukkit.craftbukkit.v1_16_R3.event.CraftEventFactory;
 import org.bukkit.craftbukkit.v1_16_R3.inventory.CraftContainer;
-import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.event.inventory.InventoryType;
-import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -136,40 +122,7 @@ public class PlayerDataManager implements IPlayerDataManager {
 
         bukkitEntity.setAccessible(true);
 
-        bukkitEntity.set(player, new CraftPlayer(player.server.server, player) {
-            @Override
-            public void saveData() {
-                super.saveData();
-                // See net.minecraft.server.WorldNBTStorage#save(EntityPlayer)
-                try {
-                    WorldNBTStorage worldNBTStorage = player.server.getPlayerList().playerFileData;
-
-                    NBTTagCompound playerData = player.save(new NBTTagCompound());
-
-                    if (!isOnline()) {
-                        // Special case: save old vehicle data
-                        NBTTagCompound oldData = worldNBTStorage.load(player);
-
-                        if (oldData != null && oldData.hasKeyOfType("RootVehicle", 10)) {
-                            // See net.minecraft.server.PlayerList#a(NetworkManager, EntityPlayer) and net.minecraft.server.EntityPlayer#b(NBTTagCompound)
-                            playerData.set("RootVehicle", oldData.getCompound("RootVehicle"));
-                        }
-                    }
-
-                    File file = new File(worldNBTStorage.getPlayerDir(), player.getUniqueIDString() + ".dat.tmp");
-                    File file1 = new File(worldNBTStorage.getPlayerDir(), player.getUniqueIDString() + ".dat");
-
-                    NBTCompressedStreamTools.a(playerData, new FileOutputStream(file));
-
-                    if (file1.exists() && !file1.delete() || !file.renameTo(file1)) {
-                        LogManager.getLogger().warn("Failed to save player data for {}", player.getDisplayName().getString());
-                    }
-
-                } catch (Exception e) {
-                    LogManager.getLogger().warn("Failed to save player data for {}", player.getDisplayName().getString());
-                }
-            }
-        });
+        bukkitEntity.set(player, new OpenPlayer(player.server.server, player));
     }
 
     @NotNull
@@ -195,68 +148,20 @@ public class PlayerDataManager implements IPlayerDataManager {
             return null;
         }
 
-        String title;
-        if (inventory instanceof SpecialEnderChest) {
-            HumanEntity owner = (HumanEntity) ((SpecialEnderChest) inventory).getBukkitOwner();
-            title = OpenInv.getPlugin(OpenInv.class).getLocalizedMessage(player, "container.enderchest", "%player%", owner.getName());
-            if (title == null) {
-                title = owner.getName() + "'s Ender Chest";
-            }
-        } else if (inventory instanceof SpecialPlayerInventory) {
-            EntityHuman owner = ((PlayerInventory) inventory).player;
-            title = OpenInv.getPlugin(OpenInv.class).getLocalizedMessage(player, "container.player", "%player%", owner.getName());
-            if (title == null) {
-                title = owner.getName() + "'s Inventory";
-            }
-        } else {
+        InventoryView view = getView(player, inventory);
+
+        if (view == null) {
             return player.openInventory(inventory.getBukkitInventory());
         }
 
-        String finalTitle = title;
-        Container container = new CraftContainer(new InventoryView() {
-            @Override
-            public @NotNull Inventory getTopInventory() {
-                return inventory.getBukkitInventory();
-            }
-            @Override
-            public @NotNull Inventory getBottomInventory() {
-                return player.getInventory();
-            }
-            @Override
-            public @NotNull HumanEntity getPlayer() {
-                return player;
-            }
-            @Override
-            public @NotNull InventoryType getType() {
-                return inventory.getBukkitInventory().getType();
-            }
-            @Override
-            public @NotNull String getTitle() {
-                return finalTitle;
-            }
-        }, nmsPlayer, nmsPlayer.nextContainerCounter()) {
+        Container container = new CraftContainer(view, nmsPlayer, nmsPlayer.nextContainerCounter()) {
             @Override
             public Containers<?> getType() {
-                switch (inventory.getBukkitInventory().getSize()) {
-                    case 9:
-                        return Containers.GENERIC_9X1;
-                    case 18:
-                        return Containers.GENERIC_9X2;
-                    case 27:
-                    default:
-                        return Containers.GENERIC_9X3;
-                    case 36:
-                        return Containers.GENERIC_9X4;
-                    case 41: // PLAYER
-                    case 45:
-                        return Containers.GENERIC_9X5;
-                    case 54:
-                        return Containers.GENERIC_9X6;
-                }
+                return getContainers(inventory.getBukkitInventory().getSize());
             }
         };
 
-        container.setTitle(new ChatComponentText(title));
+        container.setTitle(new ChatComponentText(view.getTitle()));
         container = CraftEventFactory.callInventoryOpenEvent(nmsPlayer, container);
 
         if (container == null) {
@@ -272,24 +177,61 @@ public class PlayerDataManager implements IPlayerDataManager {
 
     }
 
+    private @Nullable InventoryView getView(Player player, ISpecialInventory inventory) {
+        if (inventory instanceof SpecialEnderChest) {
+            return new OpenInventoryView(player, inventory, "container.enderchest", "'s Ender Chest");
+        } else if (inventory instanceof SpecialPlayerInventory) {
+            return new OpenInventoryView(player, inventory, "container.player", "'s Inventory");
+        } else {
+            return null;
+        }
+    }
+
+    static @NotNull Containers<?> getContainers(int inventorySize) {
+        switch (inventorySize) {
+            case 9:
+                return Containers.GENERIC_9X1;
+            case 18:
+                return Containers.GENERIC_9X2;
+            case 36:
+                return Containers.GENERIC_9X4;
+            case 41: // PLAYER
+            case 45:
+                return Containers.GENERIC_9X5;
+            case 54:
+                return Containers.GENERIC_9X6;
+            case 27:
+            default:
+                return Containers.GENERIC_9X3;
+        }
+    }
+
     @Override
-    public void sendSystemMessage(@NotNull Player player, @NotNull String message) {
-        int newline = message.indexOf('\n');
-        if (newline != -1) {
-            // No newlines in action bar chat.
-            message = message.substring(0, newline);
+    public int convertToPlayerSlot(InventoryView view, int rawSlot) {
+        int topSize = view.getTopInventory().getSize();
+        if (topSize <= rawSlot) {
+            // Slot is not inside special inventory, use Bukkit logic.
+            return view.convertSlot(rawSlot);
         }
 
-        if (message.isEmpty()) {
-            return;
+        // Main inventory, slots 0-26 -> 9-35
+        if (rawSlot < 27) {
+            return rawSlot + 9;
         }
-
-        EntityPlayer nmsPlayer = getHandle(player);
-
-        // For action bar chat, color codes are still supported but JSON text color is not allowed. Do not convert text.
-        if (nmsPlayer.playerConnection != null) {
-            nmsPlayer.playerConnection.sendPacket(new PacketPlayOutChat(new ChatComponentText(message), ChatMessageType.GAME_INFO, SystemUtils.b));
+        // Hotbar, slots 27-35 -> 0-8
+        if (rawSlot < 36) {
+            return rawSlot - 27;
         }
+        // Armor, slots 36-39 -> 39-36
+        if (rawSlot < 40) {
+            return 36 + (39 - rawSlot);
+        }
+        // Off hand
+        if (rawSlot == 40) {
+            return 40;
+        }
+        // Drop slots, "out of inventory"
+        return -1;
     }
 
 }
